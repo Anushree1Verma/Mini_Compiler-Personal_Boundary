@@ -1,30 +1,9 @@
 #include "semantic.h"
 #include <iostream>
 
-/*
- * SEMANTIC.CPP — Semantic Analysis Implementation
- *
- * LESSON: How semantic analysis fits in the pipeline
- *
- * Pipeline so far:
- *   Raw text → [LEXER] → Tokens → [PARSER] → AST → [SEMANTIC] → Valid Policy
- *
- * By this stage, the AST is structurally correct.
- * We now walk the AST and check for logical consistency.
- *
- * Think of it like: a sentence can be grammatically correct but meaningless.
- * "Colourless green ideas sleep furiously" — valid grammar, no meaning.
- * Our semantic analyser prevents the policy version of that.
- */
 
 SemanticAnalyser::SemanticAnalyser(PolicyRule& r) : rule(r) {}
 
-// ─────────────────────────────────────────────
-//  checkTimeRange
-//  Ensures the time values are in valid range.
-//  24-hour conversion was done by the parser, so
-//  we just check hour ∈ [0,23] and minute ∈ [0,59].
-// ─────────────────────────────────────────────
 void SemanticAnalyser::checkTimeRange() {
     auto& A = rule.timeClause.timeA;
     if (A.hour < 0 || A.hour > 23) {
@@ -51,15 +30,6 @@ void SemanticAnalyser::checkTimeRange() {
     }
 }
 
-// ─────────────────────────────────────────────
-//  checkBetweenOrder
-//  For BETWEEN clauses, the start time must come before end time.
-//
-//  LESSON: This is a domain-specific semantic rule.
-//  "between 10 PM and 2 AM" is a valid night-time range (crosses midnight).
-//  We allow cross-midnight ranges and just warn.
-//  "between 5 PM and 5 PM" (same time) is an error.
-// ─────────────────────────────────────────────
 void SemanticAnalyser::checkBetweenOrder() {
     if (rule.timeClause.relation != "BETWEEN") return;
     if (!rule.timeClause.hasTwoTimes) {
@@ -81,19 +51,8 @@ void SemanticAnalyser::checkBetweenOrder() {
             "Use two different times, e.g. 'between 2 PM and 5 PM'"
         ));
     }
-    // Cross-midnight ranges (A > B) are valid — just note it
-    // We don't push an error, but the JSON output will flag it.
 }
 
-// ─────────────────────────────────────────────
-//  checkConditionValidity
-//  Ensures IF conditions have recognisable values.
-//
-//  LESSON: We check that the condition isn't empty
-//  and that recognised mode names are used.
-//  This prevents "if device is on BANANA" from
-//  producing a policy.
-// ─────────────────────────────────────────────
 void SemanticAnalyser::checkConditionValidity() {
     if (!rule.hasCondition) return;
 
@@ -105,9 +64,7 @@ void SemanticAnalyser::checkConditionValidity() {
             ));
         }
 
-        // If a state modifier is present without a subject, it might be ambiguous
         if (!c.modifier.empty() && c.value.empty() && c.subject.empty()) {
-            // "if ON" doesn't make sense — warn
             errors.push_back(SemanticError(
                 "Condition modifier '" + c.modifier + "' without a subject or value is ambiguous",
                 "Try: 'if device is on DND'"
@@ -116,10 +73,6 @@ void SemanticAnalyser::checkConditionValidity() {
     }
 }
 
-// ─────────────────────────────────────────────
-//  checkSubjectConsistency
-//  "Block ALL and MESSAGES" is redundant — ALL already covers everything.
-// ─────────────────────────────────────────────
 void SemanticAnalyser::checkSubjectConsistency() {
     bool hasAll = false;
     for (const auto& s : rule.subjects) {
@@ -132,9 +85,6 @@ void SemanticAnalyser::checkSubjectConsistency() {
     }
 }
 
-// ─────────────────────────────────────────────
-//  analyse — runs all checks
-// ─────────────────────────────────────────────
 bool SemanticAnalyser::analyse() {
     checkTimeRange();
     checkBetweenOrder();

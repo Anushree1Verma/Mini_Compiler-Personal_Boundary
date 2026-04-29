@@ -6,23 +6,16 @@
 #include "semantic.h"
 
 using namespace std;
-
-// ─────────────────────────────────────────────
-//  Print a divider line
-// ─────────────────────────────────────────────
 void divider(const string& title) {
     cout << "\n";
-    cout << "══════════════════════════════════════════════════════\n";
     cout << "  " << title << "\n";
-    cout << "══════════════════════════════════════════════════════\n";
 }
 
 int main() {
     cout << "\n";
-    cout << "╔════════════════════════════════════════════════════╗\n";
-    cout << "║       Personal Boundary Compiler  v2.0             ║\n";
-    cout << "║       Lexical + Syntax + Semantic Analysis         ║\n";
-    cout << "╚════════════════════════════════════════════════════╝\n";
+
+    cout << "       Personal Boundary Compiler              \n";
+    cout << "       Lexical + Syntax + Semantic Analysis         \n";
     cout << "\n  Example rules you can try:\n";
     cout << "    Do not message after 10 PM\n";
     cout << "    Shut notifications before 9 AM\n";
@@ -34,9 +27,6 @@ int main() {
     string input;
     getline(cin, input);
 
-    // ════════════════════════════════════════════
-    //  PHASE 1: LEXICAL ANALYSIS
-    // ════════════════════════════════════════════
     divider("PHASE 1 — LEXICAL ANALYSIS");
 
     Lexer lexer(input);
@@ -64,12 +54,8 @@ int main() {
         cout << "  They will be skipped during parsing.\n";
     }
 
-    // ════════════════════════════════════════════
-    //  PHASE 2: SYNTAX ANALYSIS (PARSING)
-    // ════════════════════════════════════════════
     divider("PHASE 2 — SYNTAX ANALYSIS (PARSING)");
 
-    // Filter out UNKNOWN tokens before parsing
     vector<Token> filtered;
     for (const auto& t : tokens) {
         if (t.type != UNKNOWN) filtered.push_back(t);
@@ -82,9 +68,6 @@ int main() {
     cout << "\n  Abstract Syntax Tree:\n\n";
     rule.print();
 
-    // ════════════════════════════════════════════
-    //  PHASE 3: SEMANTIC ANALYSIS
-    // ════════════════════════════════════════════
     divider("PHASE 3 — SEMANTIC ANALYSIS");
 
     SemanticAnalyser sem(rule);
@@ -133,15 +116,10 @@ int main() {
         return 1;
     }
 
-    // ════════════════════════════════════════════
-    //  PHASE 4: CODE GENERATION — JSON Policy
-    // ════════════════════════════════════════════
     divider("PHASE 4 — OUTPUT: STRUCTURED POLICY (JSON)");
     cout << "\n" << rule.toJSON() << "\n";
 
-    cout << "\n══════════════════════════════════════════════════════\n";
     cout << "  Compilation successful.\n";
-    cout << "══════════════════════════════════════════════════════\n\n";
 
     return 0;
 }

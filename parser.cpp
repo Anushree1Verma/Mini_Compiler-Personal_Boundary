@@ -57,28 +57,17 @@ void Parser::error(string msg) {
     exit(1);
 }
 
-// ─────────────────────────────────────────────
-//  parseAction
-//  Grammar: (NEGATION* ACTION) | (ACTION NEGATION*)
-//
-//  LESSON: Why handle both orders?
-//  "DO NOT block" has negation before the action.
-//  "Block NOT" is unusual but still parseable.
-//  We support the common case: negation comes first.
-//  We also skip over the word "DO" when it precedes NOT.
-// ─────────────────────────────────────────────
 void Parser::parseAction(PolicyRule& rule) {
     rule.negated = false;
 
-    // Skip "DO" if followed by "NOT" (handles "Do Not ...")
     if (check(NEGATION) && peek().value == "DO") {
-        advance(); // consume DO
+        advance(); 
         if (check(NEGATION) && peek().value == "NOT") {
-            advance(); // consume NOT
+            advance(); 
             rule.negated = true;
         }
     }
-    // Consume standalone NOT / NO
+    
     else if (check(NEGATION)) {
         advance();
         rule.negated = true;
@@ -91,24 +80,18 @@ void Parser::parseAction(PolicyRule& rule) {
     Token act = advance();
     rule.rawAction = act.value;
 
-    // Normalise: all negative/blocking actions → "BLOCK", positive → "ALLOW"
-    // LESSON: This is the first step of semantic normalisation.
-    // "MUTE notifications" means the same as "BLOCK notifications".
-    // By normalising here in the parser, the semantic analyser
-    // doesn't have to know about synonym lists.
     if (act.value == "ALLOW" || act.value == "ENABLE") {
         rule.action = "ALLOW";
     } else {
-        // BLOCK, MUTE, SHUT, SILENCE, DISABLE all → "BLOCK"
+       
         rule.action = "BLOCK";
     }
 
-    // Negation flips the action:  "Do NOT block" = ALLOW,  "Do NOT allow" = BLOCK
+    
     if (rule.negated) {
         rule.action = (rule.action == "BLOCK") ? "ALLOW" : "BLOCK";
     }
 
-    // Optionally consume trailing negation ("BLOCK NOT messages" — unusual but handled)
     if (check(NEGATION)) {
         advance();
         rule.negated = !rule.negated;
@@ -116,15 +99,6 @@ void Parser::parseAction(PolicyRule& rule) {
     }
 }
 
-// ─────────────────────────────────────────────
-//  parseSubject
-//  Grammar: SUBJECT+
-//
-//  LESSON: The + means "one or more".
-//  We loop until we no longer see a SUBJECT token.
-//  This allows rules like "Block messages and calls after..."
-//  where two subjects are listed.
-// ─────────────────────────────────────────────
 void Parser::parseSubject(PolicyRule& rule) {
     if (!check(SUBJECT)) {
         error("Expected a subject (MESSAGES, CALLS, NOTIFICATIONS, ALL)");
@@ -139,19 +113,7 @@ void Parser::parseSubject(PolicyRule& rule) {
     }
 }
 
-// ─────────────────────────────────────────────
-//  parseTimeExpr
-//  Grammar: NUMBER MERIDIEM | TIME_KEYWORD
-//
-//  LESSON: Time conversion to 24-hour format
-//  We convert at parse time so the semantic analyser works
-//  in a single unified time system. This prevents errors like
-//  comparing "12 PM" (noon) with "12 AM" (midnight).
-//
-//  Handles both "10 PM" and "10:30 PM" formats.
-// ─────────────────────────────────────────────
 TimeExpr Parser::parseTimeExpr() {
-    // Named keyword: midnight, noon, etc.
     if (check(TIME_KEYWORD)) {
         string kw = advance().value;
         if (kw == "MIDNIGHT") return TimeExpr(0, 0, "midnight");
@@ -166,7 +128,6 @@ TimeExpr Parser::parseTimeExpr() {
 
     string numStr = advance().value;
 
-    // Parse HH or HH:MM
     int hour = 0, minute = 0;
     size_t colon = numStr.find(':');
     if (colon != string::npos) {
@@ -178,15 +139,10 @@ TimeExpr Parser::parseTimeExpr() {
 
     string raw = numStr;
 
-    // Consume AM/PM if present
     if (check(MERIDIEM)) {
         string meridiem = advance().value;
         raw += " " + meridiem;
 
-        // Convert to 24-hour
-        // LESSON: 12-hour → 24-hour conversion rules:
-        //   12 AM = 0:00 (midnight),  1–11 AM = 1–11
-        //   12 PM = 12:00 (noon),     1–11 PM = 13–23
         if (meridiem == "PM" && hour != 12) hour += 12;
         if (meridiem == "AM" && hour == 12) hour = 0;
     }
@@ -198,13 +154,6 @@ TimeExpr Parser::parseTimeExpr() {
     return TimeExpr(hour, minute, raw);
 }
 
-// ─────────────────────────────────────────────
-//  parseTimeClause
-//  Grammar: RELATION time_expr (CONNECTOR time_expr)?
-//
-//  The CONNECTOR here is "AND" used for BETWEEN clauses:
-//   "between 2 PM AND 5 PM"
-// ─────────────────────────────────────────────
 TimeClause Parser::parseTimeClause() {
     TimeClause tc;
 
@@ -215,10 +164,9 @@ TimeClause Parser::parseTimeClause() {
     tc.relation = advance().value;
     tc.timeA = parseTimeExpr();
 
-    // BETWEEN requires a second time connected by AND
     if (tc.relation == "BETWEEN") {
         if (check(CONNECTOR) && peek().value == "AND") {
-            advance(); // consume AND
+            advance(); 
         }
         tc.timeB = parseTimeExpr();
         tc.hasTwoTimes = true;
@@ -226,66 +174,43 @@ TimeClause Parser::parseTimeClause() {
 
     return tc;
 }
-
-// ─────────────────────────────────────────────
-//  parseCondition
-//  Grammar: IF_KW cond_expr (CONNECTOR cond_expr)*
-//  cond_expr: COND_SUBJECT COND_VERB? COND_STATE? COND_VALUE?
-//
-//  LESSON: Optional tokens
-//  Not all condition words are mandatory. The user might write:
-//    "if device is on DND"           → subject + verb + state + value
-//    "if DND"                        → just the value
-//    "if focus mode is active"       → subject + subject + verb + state
-//  We handle this by checking each token type in order and accepting
-//  whatever is present.
-// ─────────────────────────────────────────────
 vector<ConditionExpr> Parser::parseCondition() {
     vector<ConditionExpr> conditions;
 
     if (!check(IF_KW)) {
         error("Expected IF to start a condition");
     }
-    advance(); // consume IF
-
-    // Parse one or more condition expressions joined by AND/OR
+    advance(); 
     do {
         ConditionExpr ce;
 
-        // Subject (optional — may just say "if DND")
         while (check(COND_SUBJECT)) {
             ce.subject += advance().value + " ";
         }
         if (!ce.subject.empty() && ce.subject.back() == ' ')
             ce.subject.pop_back();
 
-        // State verb (optional)
         if (check(COND_VERB)) {
             ce.stateVerb = advance().value;
         }
 
-        // ON / OFF / ACTIVE (optional)
         if (check(COND_STATE)) {
             ce.modifier = advance().value;
         }
 
-        // Named mode/value (optional)
         if (check(COND_VALUE)) {
             ce.value = advance().value;
         }
 
-        // If we got nothing, error
         if (ce.subject.empty() && ce.stateVerb.empty() &&
             ce.modifier.empty() && ce.value.empty()) {
             error("Empty condition expression after IF");
         }
 
         conditions.push_back(ce);
-
-        // Check for AND/OR connector between conditions
         if (check(CONNECTOR)) {
             ce.connector = peek().value;
-            advance(); // consume AND/OR
+            advance(); 
         } else {
             break;
         }
@@ -294,10 +219,7 @@ vector<ConditionExpr> Parser::parseCondition() {
     return conditions;
 }
 
-// ─────────────────────────────────────────────
-//  parseRule — Top-level entry point
-//  Grammar: action_phrase subject time_clause condition?
-// ─────────────────────────────────────────────
+
 PolicyRule Parser::parseRule() {
     PolicyRule rule;
 
@@ -305,28 +227,19 @@ PolicyRule Parser::parseRule() {
     parseSubject(rule);
     rule.timeClause = parseTimeClause();
 
-    // Condition is optional
     if (check(IF_KW)) {
         rule.hasCondition = true;
         rule.conditions = parseCondition();
     }
 
-    // After all this, we should be at end of input
     if (current < (int)tokens.size() && peek().type != UNKNOWN) {
-        // Warn about leftover tokens (don't crash — just warn)
+    
         cerr << "Warning: unexpected tokens at end of input starting at: \""
              << peek().value << "\"" << endl;
     }
 
     return rule;
 }
-
-// ─────────────────────────────────────────────
-//  AST PRETTY PRINTER
-//  LESSON: How to visualise a tree in ASCII
-//  Each level of the tree is indented further.
-//  We print the structure so you can see how your input was parsed.
-// ─────────────────────────────────────────────
 void PolicyRule::print() const {
     cout << "  PolicyRule" << endl;
     cout << "  ├─ Action:   " << action
@@ -345,7 +258,6 @@ void PolicyRule::print() const {
         cout << " AND " << timeClause.timeB.raw;
     cout << endl;
 
-    // Format HH:MM properly using a helper lambda
     auto fmt = [](int h, int m) -> string {
         ostringstream os;
         os << setfill('0') << setw(2) << h << ":" << setw(2) << m;
@@ -372,11 +284,6 @@ void PolicyRule::print() const {
     }
 }
 
-// ─────────────────────────────────────────────
-//  JSON emitter
-//  Produces structured output that a backend/UI can consume.
-//  This is the "code generation" phase of a compiler.
-// ─────────────────────────────────────────────
 string PolicyRule::toJSON() const {
     ostringstream js;
     js << "{\n";
@@ -406,7 +313,6 @@ string PolicyRule::toJSON() const {
         js << ",\n  \"conditions\": [\n";
         for (size_t i = 0; i < conditions.size(); ++i) {
             const auto& c = conditions[i];
-            // Build fields list, then join with ", " — avoids trailing commas
             vector<string> fields;
             if (!c.subject.empty())   fields.push_back("\"subject\": \"" + c.subject + "\"");
             if (!c.stateVerb.empty()) fields.push_back("\"verb\": \"" + c.stateVerb + "\"");
