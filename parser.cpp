@@ -2,30 +2,6 @@
 #include <sstream>
 #include <iomanip>
 
-/*
- * PARSER.CPP — Recursive Descent Parser
- *
- * LESSON: Recursive Descent Parsing
- *
- * Each function below corresponds to one rule in the grammar:
- *
- *   rule         → action_phrase subject time_clause condition?
- *   action_phrase → (NEGATION* ACTION) | (ACTION NEGATION*)
- *   subject      → SUBJECT+
- *   time_clause  → RELATION time_expr (CONNECTOR time_expr)?
- *   time_expr    → NUMBER MERIDIEM | TIME_KEYWORD
- *   condition    → IF_KW cond_expr (CONNECTOR cond_expr)*
- *   cond_expr    → COND_SUBJECT COND_VERB COND_STATE COND_VALUE?
- *
- * Each function reads tokens left-to-right and calls sub-functions
- * when it expects a nested rule. This "descent" into sub-rules is
- * why it's called Recursive Descent.
- *
- * LESSON: Error recovery
- * Your original parser used exit(1) on any error.
- * We keep that for now (it's fine for a terminal demo), but in a
- * real compiler you'd collect multiple errors and report them all.
- */
 
 Parser::Parser(vector<Token> t) : tokens(t), current(0) {}
 
